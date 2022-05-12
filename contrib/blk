@@ -1,0 +1,50 @@
+#!/bin/bash
+
+usage="Usage: reet [ info | stake | latest | dust ] \n \n
+	info: Check basic info. \n
+	stake: Enables staking; Passes password without storing it in memory. \n
+	latest: Compares latest block with the ReflectNL hosted block explorer. \n
+	dust: Prunes dust from wallet. Dust is defined as less than .0001REET. Requires jq. \n"
+
+reetc='/usr/local/bin/reflect-cli -datadir=/var/lib/.reflect/'
+
+case $1 in
+
+info )
+	$reetc getwalletinfo | egrep "balance|staked_balance|txcount|unconfirmed_balance|immature_balance|total_balance";
+	$reetc getnetworkinfo | egrep "subversion|connections";
+	$reetc getinfo | egrep "blocks";
+	$reetc getblockchaininfo | egrep "best";
+	$reetc getstakinginfo | egrep "enabled|staking|netstakeweight|expectedtime";
+;;	
+
+stake )
+	echo 'enter Reflect Password'
+	read -s REETPW
+	$reetc walletpassphrase $REETPW 99999999 true
+	REETPW=null
+;;
+
+latest )
+	latest=$($reetc  getblockcount) && \
+	    blacksight=$(curl -s https://node.reflect.io/insight-api/block-index/$latest? |  cut -d '"' -f4) && \
+	    reflect=$($reetc  getblockhash $latest) && \
+	    diff -sy --label Local <(echo $reflect) --label Explorer <(echo $blacksight)
+;;
+
+dust )
+	IFS=$'\n';
+
+	 /usr/local/bin/reflect-cli -datadir=/var/lib/.reflect/ listtransactions "*" 99999 | jq -r '.[] | select(.category != "send") | select(.amount < .0001) | .txid' | uniq >txid.txt
+
+	while read line; do
+	        echo $line 
+	        /usr/local/bin/reflect-cli -datadir=/var/lib/.reflect/ removeprunedfunds $(echo $line)
+	done < "txid.txt"
+;;
+
+*)
+    echo -e $usage
+;;	
+
+esac
